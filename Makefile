@@ -1,4 +1,6 @@
-CC=gcc
-CFLAGS=-O2 -g0
+CFLAGS=-Wall
 
-tools: $(CC) -o $@ $^ $(CFLAGS)
+all : show-pagemap
+
+clean :
+	rm -f *.o show-pagemap

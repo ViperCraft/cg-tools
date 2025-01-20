@@ -25,6 +25,7 @@ static char const *cgroup_mount = DEFAULT_CGROUP_MNT;
 
 static uint64_t read_pagecount( uint64_t pfn );
 static uint64_t read_pagecgroup( uint64_t pfn );
+static int g_max_cgroup_width = 80;
 
 static int o_show_details = 0, o_show_cgroup = 0, o_print_refs = 0, 
     o_print_map_name = 0, o_dir_mode = 0;
@@ -162,7 +163,13 @@ static int parse_cgroup_mnt( char const *dirname, uint64_t target_inode, char **
             
             if( err == 0 )
             {
-                if( st.st_ino == target_inode )
+                if( 0 == target_inode )
+                {
+                    int len = strlen(fname);
+                    if( len > g_max_cgroup_width )
+                        g_max_cgroup_width = len;
+                }
+                else if ( st.st_ino == target_inode )
                 {
                     // found
                     *fname_out = fname;
@@ -180,6 +187,11 @@ static int parse_cgroup_mnt( char const *dirname, uint64_t target_inode, char **
     closedir(pDir);
 
     return exit_flag;
+}
+
+static void init_cgroup_max_name()
+{
+    parse_cgroup_mnt(cgroup_mount, 0, NULL);
 }
 
 
@@ -261,11 +273,12 @@ void print_summary()
     if( o_show_cgroup && a_per_cgroup_stats.size )
     {
         printf("cgroup(s) active pages:\n");
+        init_cgroup_max_name();
         for( uint64_t i = 0; i < a_per_cgroup_stats.size; ++i )
         {
             if( a_per_cgroup_stats.ptr[i] )
             {
-                printf("{%ld}%-128s %-8ld = %s\n", i, get_groupid_name(i), a_per_cgroup_stats.ptr[i], human_bytes(a_per_cgroup_stats.ptr[i] * PAGE_SIZE));
+                printf("{%ld}%-*s %-10ld = %s\n", i, g_max_cgroup_width, get_groupid_name(i), a_per_cgroup_stats.ptr[i], human_bytes(a_per_cgroup_stats.ptr[i] * PAGE_SIZE));
             }
         }
     }
@@ -316,7 +329,6 @@ void parse_maps( const char *maps_file, const char *pagemap_file )
                 size_t x = i - 1;
                 while(x && buffer[x] != '\n') x --;
                 if(buffer[x] == '\n') x ++;
-                size_t beginning = x;
 
                 while(buffer[x] != '-' && x+1 < sizeof buffer) {
                     char c = buffer[x ++];
@@ -376,7 +388,6 @@ void parse_maps( const char *maps_file, const char *pagemap_file )
 
 static void process_file( char const *fname, int pagemap )
 {
-
     int f = open(fname, O_RDONLY | O_NOATIME);
     if( -1 == f )
     {
@@ -392,60 +403,72 @@ static void process_file( char const *fname, int pagemap )
         exit( EXIT_FAILURE );
     }
 
+    size_t marked = 0;
     size_t npages = get_npages(st.st_size);
 
-    void *mm = mmap(0, st.st_size, PROT_READ, MAP_SHARED, f, 0);
-
-    if( MAP_FAILED == mm )
+    if( npages )
     {
-        fprintf( stderr, "failed to mmap file: %s, errno: %d\n", fname, errno );
-        close(f);
-        exit( EXIT_FAILURE );
+        void *mm = mmap(0, st.st_size, PROT_READ, MAP_SHARED, f, 0);
+
+        if( MAP_FAILED == mm )
+        {
+            fprintf( stderr, "failed to mmap file: %s, errno: %d\n", fname, errno );
+            close(f);
+            exit( EXIT_FAILURE );
+        }
+
+        uint8_t *mcore_map = malloc(npages);
+
+        if( mincore(mm, st.st_size, mcore_map) )
+        {
+            fprintf( stderr, "failed to mincore-mapping file: %s, errno: %d\n", fname, errno );
+            munmap(mm, st.st_size);
+            exit( EXIT_FAILURE );
+        }
+
+        uint64_t volatile sum = 0;
+
+        for( size_t i = 0; i < npages; ++i )
+        {
+            if( mcore_map[i] & 0x1 )
+            {
+                ++marked;
+                // HACK: need to read this page to get hit into local VMA
+                uint64_t *mem = (uint64_t *)((char*)mm + PAGE_SIZE * i);
+                sum += *mem;
+            }
+        }
+
+        // now we ready read vma
+        size_t addr = (size_t)mm;
+        read_vma(pagemap, addr, addr + st.st_size, fname);
+
+        munmap(mm, st.st_size);
+        free(mcore_map);
     }
 
     close(f);
-
-    uint8_t *mcore_map = malloc(npages), *glue_map = NULL;
-
-    if( mincore(mm, st.st_size, mcore_map) )
-    {
-        fprintf( stderr, "failed to mincore-mapping file: %s, errno: %d\n", fname, errno );
-        munmap(mm, st.st_size);
-        exit( EXIT_FAILURE );
-    }
-
-    size_t marked = 0;
-    uint64_t volatile sum = 0;
-
-    for( size_t i = 0; i < npages; ++i )
-    {
-        if( mcore_map[i] & 0x1 )
-        {
-            ++marked;
-            // HACK: need to read this page to get hit into local VMA
-            uint64_t *mem = (uint64_t *)((char*)mm + PAGE_SIZE * i);
-            sum += *mem;
-        }
-    }
-
-    // now we ready read vma
-    size_t addr = (size_t)mm;
-    read_vma(pagemap, addr, addr + st.st_size, fname);
-
-    munmap(mm, st.st_size);
-    free(mcore_map);
 
     printf("%s: Pages %lu/%lu %.2f%%\n", fname, npages, marked, percent(marked, npages));
 }
 
 static int process_dir( char const *dirname, int pagemap )
 {
-    DIR *pDir = opendir(dirname);
+    int f = open(dirname, O_DIRECTORY | O_RDONLY | O_NOATIME);
+    if( f == -1 )
+    {
+        perror("open() for dir failed");
+        exit(1);
+    }
+
+    DIR *pDir = fdopendir(f);
     if (NULL == pDir)
     {
         perror("opendir() failed");
         exit(1);
     }
+
+    close(f);
 
     int exit_flag = 1;
     struct dirent *dp;

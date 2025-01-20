@@ -26,11 +26,15 @@ options are following:
 **Per process mode**
 This is default mode, you need to pass PIDs:
 ```bash
-./show-pagemap -g 
+sudo ./show-pagemap -g $(pidof python3) | grep ddb4057f992264502e4351bd56c0eb19e34fb34682cc3c399b2f10c7b9e74968
+{22907}/sys/fs/cgroup/memory/docker/ddb4057f992264502e4351bd56c0eb19e34fb34682cc3c399b2f10c7b9e74968 103550     = 404.49 MB
 ```
 
 **DiskCache back-traverse mode**
 This is extended mode, traverse provided directory and examines regular files one by one and look into disk-cache data and collects like in per-process mode, but this time w/o processes.
+```bash
+
+```
 
 ***Expert mode***
 TODO
@@ -40,5 +44,5 @@ TODO
 - No HugePages support, but if you plan to use only DiskCache mode, this will be not necessary.
 - Enabling counting references pages shows only total pages with refs more than 1
 - Traverse disk-cache take some time, so actual memory layout can be changed during measurements, kept in mind.
-- Summary cgroup name has fixed left formatting with size 128, so if your display is shorter than 128 cols you need to fix this is the code by self %)
+
 
