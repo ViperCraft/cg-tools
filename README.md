@@ -21,6 +21,7 @@ options are following:
         -r|--refs:                     show sharing refs from /proc/kpagecount.
         -n|--names:                    show map name if found.
         -m|--mount:                    override cgroup mount, default is /sys/fs/cgroup/.
+        -F|--no-file-stat:             don't show per file stat on DIR mode.
 ```
 
 **Per process mode**

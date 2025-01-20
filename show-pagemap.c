@@ -26,8 +26,8 @@ static char const *cgroup_mount = DEFAULT_CGROUP_MNT;
 static uint64_t read_pagecount( uint64_t pfn );
 static uint64_t read_pagecgroup( uint64_t pfn );
 
-static int o_show_details = 0, o_show_cgroup = 0, o_print_refs = 0, 
-    o_print_map_name = 0, o_dir_mode = 0;
+static int o_show_details = 0, o_show_cgroup = 0, o_print_refs = 0,
+    o_print_map_name = 0, o_dir_mode = 0, o_dont_show_file_stat = 0;
 
 struct summary_t {
     uint64_t total_pages;
@@ -37,7 +37,7 @@ struct summary_t {
 } g_summary;
 
 
-/*  since we cannot use here C++ std::unordered_map 
+/*  since we cannot use here C++ std::unordered_map
     we shall use just huge arrays for calculation
 */
 
@@ -131,7 +131,7 @@ static int parse_cgroup_mnt( char const *dirname, uint64_t target_inode, char **
         if (dp->d_name[0] == '.')
             continue;
 
-        int dir_slen = strlen(dirname), total_sz = 
+        int dir_slen = strlen(dirname), total_sz =
             strlen(dp->d_name) + dir_slen + 2;
         char *fname = malloc(total_sz);
 
@@ -159,7 +159,7 @@ static int parse_cgroup_mnt( char const *dirname, uint64_t target_inode, char **
         {
             if( err != 0 )
                 err = stat(fname, &st);
-            
+
             if( err == 0 )
             {
                 if ( st.st_ino == target_inode )
@@ -182,7 +182,7 @@ static int parse_cgroup_mnt( char const *dirname, uint64_t target_inode, char **
     return exit_flag;
 }
 
-static char const* get_groupid_name_len( uint64_t gid )
+static int get_groupid_name_len( uint64_t gid )
 {
     // WARN: scan fs each time!
     char *cg_name = NULL;
@@ -226,9 +226,10 @@ static void usage()
     fprintf( stderr, "\t-r|--refs:                     show sharing refs from /proc/kpagecount.\n" );
     fprintf( stderr, "\t-n|--names:                    show map name if found.\n" );
     fprintf( stderr, "\t-m|--mount:                    override cgroup mount, default is /sys/fs/cgroup/.\n" );
+    fprintf( stderr, "\t-F|--no-file-stat:             don't show per file stat on DIR mode.\n" );
 }
 
-static void dump_page(uint64_t address, uint64_t data, const char *map_name) 
+static void dump_page(uint64_t address, uint64_t data, const char *map_name)
 {
     uint64_t pfn = data & 0x7fffffffffffff;
     uint64_t cnt = o_print_refs ? (pfn ? read_pagecount(pfn) : 0) : 0;
@@ -252,7 +253,7 @@ static void dump_page(uint64_t address, uint64_t data, const char *map_name)
 
         if( map_name )
             printf(" name: %s", map_name);
-        
+
         printf("\n");
     }
 
@@ -296,12 +297,12 @@ void print_summary()
     }
 }
 
-void read_vma(int fd, uint64_t start, uint64_t end, const char *map_name) 
+void read_vma(int fd, uint64_t start, uint64_t end, const char *map_name)
 {
-    for(uint64_t i, val; start < end; start += PAGE_SIZE) 
+    for(uint64_t i, val; start < end; start += PAGE_SIZE)
     {
         i = (start / PAGE_SIZE) * sizeof(uint64_t);
-        if(pread(fd, &val, sizeof(uint64_t), i) != sizeof(uint64_t)) 
+        if(pread(fd, &val, sizeof(uint64_t), i) != sizeof(uint64_t))
         {
             if(errno) perror("vma pread");
             break;
@@ -310,7 +311,7 @@ void read_vma(int fd, uint64_t start, uint64_t end, const char *map_name)
     }
 }
 
-void parse_maps( const char *maps_file, const char *pagemap_file ) 
+void parse_maps( const char *maps_file, const char *pagemap_file )
 {
     int maps = open(maps_file, O_RDONLY);
     if(maps < 0)
@@ -333,10 +334,10 @@ void parse_maps( const char *maps_file, const char *pagemap_file )
 
         length += offset;
 
-        for(size_t i = offset; i < (size_t)length; i ++) 
+        for(size_t i = offset; i < (size_t)length; i ++)
         {
             uint64_t low = 0, high = 0;
-            if(buffer[i] == '\n' && i) 
+            if(buffer[i] == '\n' && i)
             {
                 size_t x = i - 1;
                 while(x && buffer[x] != '\n') x --;
@@ -357,7 +358,7 @@ void parse_maps( const char *maps_file, const char *pagemap_file )
                 while(buffer[x] != '-' && x+1 < sizeof buffer) x ++;
                 if(buffer[x] == '-') x ++;
 
-                while(buffer[x] != ' ' && x+1 < sizeof buffer) 
+                while(buffer[x] != ' ' && x+1 < sizeof buffer)
                 {
                     char c = buffer[x ++];
                     high *= 16;
@@ -461,7 +462,8 @@ static void process_file( char const *fname, int pagemap )
 
     close(f);
 
-    printf("%s: Pages %lu/%lu %.2f%%\n", fname, npages, marked, percent(marked, npages));
+    if( 0 == o_dont_show_file_stat )
+        printf("%s: Pages %lu/%lu %.2f%%\n", fname, npages, marked, percent(marked, npages));
 }
 
 static int process_dir( char const *dirname, int pagemap )
@@ -487,7 +489,7 @@ static int process_dir( char const *dirname, int pagemap )
         if (dp->d_name[0] == '.')
             continue;
 
-        int dir_slen = strlen(dirname), total_sz = 
+        int dir_slen = strlen(dirname), total_sz =
             strlen(dp->d_name) + dir_slen + 2;
         char *fname = malloc(total_sz);
 
@@ -517,7 +519,7 @@ static int process_dir( char const *dirname, int pagemap )
         {
             if( !(exit_flag = process_dir(fname, pagemap)) )
                 break;
-        } 
+        }
         else if (isReg) process_file(fname, pagemap);
 
         free(fname);
@@ -529,7 +531,7 @@ static int process_dir( char const *dirname, int pagemap )
     return exit_flag;
 }
 
-int main( int argc, char *argv[] ) 
+int main( int argc, char *argv[] )
 {
     while( 1 )
     {
@@ -541,10 +543,11 @@ int main( int argc, char *argv[] )
             { "refs",                 no_argument,       NULL, 'r' },
             { "names",                no_argument,       NULL, 'n' },
             { "mount",                required_argument, NULL, 'm' },
+            { "no-file-stat",         no_argument,       NULL, 'F' },
             { NULL,                             0,       NULL, 0   }
         };
 
-        int op_c = getopt_long( argc, argv, "dgrnDm:", long_options, NULL );
+        int op_c = getopt_long( argc, argv, "dgrnDm:F", long_options, NULL );
         if( op_c == -1 )
             break;
 
@@ -567,6 +570,9 @@ int main( int argc, char *argv[] )
                 break;
             case 'm':
                 cgroup_mount = optarg;
+                break;
+            case 'F':
+                o_dont_show_file_stat = 1;
                 break;
             default:
                 fprintf( stderr, "invalid argument\n");
@@ -597,7 +603,7 @@ int main( int argc, char *argv[] )
     {
         snprintf(pagemap_file, sizeof(pagemap_file), "/proc/self/pagemap");
         int pagemap = open(pagemap_file, O_RDONLY);
-        if(pagemap < 0) 
+        if(pagemap < 0)
         {
             perror("open /proc/pagemap failed");
             return 1;
@@ -605,13 +611,13 @@ int main( int argc, char *argv[] )
         process_dir(*argv, pagemap);
     }
     else
-    {        
+    {
         errno = 0;
         char maps_file[BUFSIZ];
         for( int p = 0; p < argc; ++p )
         {
             int pid = (int)strtol(argv[p], NULL, 0);
-            if( errno ) 
+            if( errno )
             {
                 perror("failed to parse PID");
                 return 1;
@@ -633,7 +639,7 @@ int main( int argc, char *argv[] )
 
 static int fd_pagecount = -1;
 
-uint64_t read_pagecount( uint64_t pfn ) 
+uint64_t read_pagecount( uint64_t pfn )
 {
    /* This file contains a 64-bit count of the number of
    times each page is mapped, indexed by PFN.
@@ -641,7 +647,7 @@ uint64_t read_pagecount( uint64_t pfn )
    if( -1 == fd_pagecount )
    {
       fd_pagecount = open("/proc/kpagecount", O_RDONLY);
-      if( fd_pagecount < 0 ) 
+      if( fd_pagecount < 0 )
       {
          perror("open kpagecount");
          return 0;
@@ -670,7 +676,7 @@ uint64_t read_pagecgroup( uint64_t pfn )
    if( -1 == fd_pagecgroup )
    {
       fd_pagecgroup = open("/proc/kpagecgroup", O_RDONLY);
-      if( fd_pagecgroup < 0 ) 
+      if( fd_pagecgroup < 0 )
       {
          perror("open kpagecgroup");
          exit(1);
