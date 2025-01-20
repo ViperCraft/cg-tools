@@ -27,7 +27,7 @@ options are following:
 This is default mode, you need to pass PIDs:
 ```bash
 sudo ./show-pagemap -g $(pidof python3) | grep ddb4057f992264502e4351bd56c0eb19e34fb34682cc3c399b2f10c7b9e74968
-{22907}/sys/fs/cgroup/memory/docker/ddb4057f992264502e4351bd56c0eb19e34fb34682cc3c399b2f10c7b9e74968 103550     = 404.49 MB
+Id:22907    /sys/fs/cgroup/memory/docker/ddb4057f992264502e4351bd56c0eb19e34fb34682cc3c399b2f10c7b9e74968 104675     = 408.89 MB
 ```
 
 **DiskCache back-traverse mode**

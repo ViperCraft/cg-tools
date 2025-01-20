@@ -25,7 +25,6 @@ static char const *cgroup_mount = DEFAULT_CGROUP_MNT;
 
 static uint64_t read_pagecount( uint64_t pfn );
 static uint64_t read_pagecgroup( uint64_t pfn );
-static int g_max_cgroup_width = 80;
 
 static int o_show_details = 0, o_show_cgroup = 0, o_print_refs = 0, 
     o_print_map_name = 0, o_dir_mode = 0;
@@ -163,13 +162,7 @@ static int parse_cgroup_mnt( char const *dirname, uint64_t target_inode, char **
             
             if( err == 0 )
             {
-                if( 0 == target_inode )
-                {
-                    int len = strlen(fname);
-                    if( len > g_max_cgroup_width )
-                        g_max_cgroup_width = len;
-                }
-                else if ( st.st_ino == target_inode )
+                if ( st.st_ino == target_inode )
                 {
                     // found
                     *fname_out = fname;
@@ -189,9 +182,19 @@ static int parse_cgroup_mnt( char const *dirname, uint64_t target_inode, char **
     return exit_flag;
 }
 
-static void init_cgroup_max_name()
+static char const* get_groupid_name_len( uint64_t gid )
 {
-    parse_cgroup_mnt(cgroup_mount, 0, NULL);
+    // WARN: scan fs each time!
+    char *cg_name = NULL;
+    parse_cgroup_mnt(cgroup_mount, gid, &cg_name);
+    if( cg_name )
+    {
+        int len = strlen(cg_name);
+        free(cg_name);
+        return len;
+    }
+
+    return 0;
 }
 
 
@@ -273,12 +276,21 @@ void print_summary()
     if( o_show_cgroup && a_per_cgroup_stats.size )
     {
         printf("cgroup(s) active pages:\n");
-        init_cgroup_max_name();
+        int max_cgroup_width = 80;
         for( uint64_t i = 0; i < a_per_cgroup_stats.size; ++i )
         {
             if( a_per_cgroup_stats.ptr[i] )
             {
-                printf("{%ld}%-*s %-10ld = %s\n", i, g_max_cgroup_width, get_groupid_name(i), a_per_cgroup_stats.ptr[i], human_bytes(a_per_cgroup_stats.ptr[i] * PAGE_SIZE));
+                int lname = get_groupid_name_len(i);
+                if( max_cgroup_width < lname )
+                    max_cgroup_width = lname;
+            }
+        }
+        for( uint64_t i = 0; i < a_per_cgroup_stats.size; ++i )
+        {
+            if( a_per_cgroup_stats.ptr[i] )
+            {
+                printf("Id:%-8ld %-*s %-10ld = %s\n", i, max_cgroup_width, get_groupid_name(i), a_per_cgroup_stats.ptr[i], human_bytes(a_per_cgroup_stats.ptr[i] * PAGE_SIZE));
             }
         }
     }
@@ -468,8 +480,6 @@ static int process_dir( char const *dirname, int pagemap )
         exit(1);
     }
 
-    close(f);
-
     int exit_flag = 1;
     struct dirent *dp;
     while ((dp = readdir(pDir)) != NULL)
@@ -514,6 +524,7 @@ static int process_dir( char const *dirname, int pagemap )
     }
 
     closedir(pDir);
+    close(f);
 
     return exit_flag;
 }
