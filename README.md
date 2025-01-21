@@ -33,9 +33,19 @@ Id:22907    /sys/fs/cgroup/memory/docker/ddb4057f992264502e4351bd56c0eb19e34fb34
 
 **DiskCache back-traverse mode**
 This is extended mode, traverse provided directory and examines regular files one by one and look into disk-cache data and collects like in per-process mode, but this time w/o processes.
+By default prints per file stats, so add -F option to suppress it.
 ```bash
-
+sudo ./show-pagemap -g -F -D /var/lib/docker/
+Summary:
+total pages:                2071601 = 7.903 GB
+total active(RSS):            25986 = 101.51 MB
+total shared:                     0 = 0 B
+cgroup(s) active pages:
+Id:2859     /sys/fs/cgroup/blkio/init.scope                                                               620        = 2.42 MB
+Id:3139     /sys/fs/cgroup/memory/system.slice/docker.service                                             48         = 192.00 KB
+Id:22907    /sys/fs/cgroup/memory/docker/ddb4057f992264502e4351bd56c0eb19e34fb34682cc3c399b2f10c7b9e74968 25318      = 98.90 MB
 ```
+
 
 ***Expert mode***
 TODO
