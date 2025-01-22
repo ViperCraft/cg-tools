@@ -76,7 +76,7 @@ static double percent( size_t share, size_t total )
 
 static char const* human_bytes( size_t bytes )
 {
-    static size_t const KB = 1024UL, MB = KB * KB, GB = MB * KB, TB = GB * KB;
+    size_t KB = 1024UL, MB = KB * KB, GB = MB * KB, TB = GB * KB;
     size_t kbytes = bytes / KB;
     size_t mbytes = bytes / MB;
     size_t gbytes = bytes / GB;
@@ -466,8 +466,23 @@ static void process_file( char const *fname, int pagemap )
         printf("%s: Pages %lu/%lu %.2f%%\n", fname, npages, marked, percent(marked, npages));
 }
 
+static int is_regular_file( char const *path )
+{
+    struct stat st;
+    int err = stat(path, &st);
+    if( err != -1 )
+        return S_ISREG(st.st_mode);
+
+    return 0;
+}
+
 static int process_dir( char const *dirname, int pagemap )
 {
+    if( is_regular_file(dirname) )
+    {
+        process_file(dirname, pagemap);
+        return 1; // exit
+    }
     int f = open(dirname, O_DIRECTORY | O_RDONLY | O_NOATIME);
     if( f == -1 )
     {
